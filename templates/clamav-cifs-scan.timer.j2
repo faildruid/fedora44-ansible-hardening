@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly ClamAV scan of CIFS shares
+
+[Timer]
+OnCalendar=*-*-* {{ clamav_scan_time }}
+Persistent=true
+AccuracySec=1min
+Unit=clamav-cifs-scan.service
+
+[Install]
+WantedBy=timers.target

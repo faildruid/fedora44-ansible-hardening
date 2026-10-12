@@ -1,0 +1,26 @@
+[Unit]
+Description=ClamAV scan of remote CIFS mounts
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/clamav-cifs-scan.sh
+WorkingDirectory=/
+UMask=0077
+Nice={{ clamav_scan_nice }}
+IOSchedulingClass=best-effort
+IOSchedulingPriority={{ clamav_scan_io_priority }}
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+{% for share in clamav_cifs_shares %}
+ReadOnlyPaths={{ share }}
+{% endfor %}
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clamav-cifs-scan
+TimeoutStartSec=infinity

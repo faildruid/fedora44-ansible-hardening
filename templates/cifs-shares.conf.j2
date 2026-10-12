@@ -1,0 +1,4 @@
+# Ansible-managed. One absolute CIFS mount path per line.
+{% for share in clamav_cifs_shares %}
+{{ share }}
+{% endfor %}

@@ -1,0 +1,215 @@
+---
+- name: Fedora 44 baseline security and CIFS ClamAV scanning
+  hosts: fedora_servers
+  become: true
+  gather_facts: true
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Validate and reload sshd
+      ansible.builtin.shell: sshd -t && systemctl reload sshd
+      changed_when: true
+
+  pre_tasks:
+    - name: Require Fedora 44
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Fedora'
+          - ansible_facts['distribution_major_version'] == '44'
+        fail_msg: This playbook targets Fedora Server 44 only.
+      tags: [always]
+
+    - name: Validate scan target list
+      ansible.builtin.assert:
+        that:
+          - clamav_cifs_shares is sequence
+          - clamav_cifs_shares is not string
+          - clamav_cifs_shares | length > 0
+          - clamav_cifs_shares | unique | length == clamav_cifs_shares | length
+          - item is match('^/[^\r\n]*$')
+          - item != '/'
+          - item is not search('[\r\n]')
+        fail_msg: CIFS mount paths must be unique absolute non-root paths.
+      loop: '{{ clamav_cifs_shares }}'
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+  tasks:
+    - name: Upgrade installed packages (opt-in)
+      ansible.builtin.dnf:
+        name: '*'
+        state: latest
+        update_cache: true
+      when: package_upgrade_enabled | bool
+      tags: [updates]
+
+    - name: Install baseline security packages
+      ansible.builtin.dnf:
+        name:
+          - firewalld
+          - policycoreutils-python-utils
+        state: present
+      tags: [baseline]
+
+    - name: Enable firewalld without altering existing rules
+      ansible.builtin.systemd_service:
+        name: firewalld.service
+        enabled: true
+        state: started
+      when: firewalld_enabled | bool
+      tags: [firewall]
+
+    - name: Enforce SELinux at runtime (opt-in)
+      ansible.builtin.command: setenforce 1
+      when:
+        - selinux_enforcing | bool
+        - ansible_facts['selinux'] is defined
+        - ansible_facts['selinux']['status'] == 'enabled'
+        - ansible_facts['selinux']['mode'] != 'enforcing'
+      changed_when: true
+      tags: [selinux]
+
+    - name: Persist SELinux enforcing mode (opt-in)
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: SELINUX=enforcing
+        backup: true
+      when: selinux_enforcing | bool
+      tags: [selinux]
+
+    - name: Install optional DNF5 automatic package (timer not enabled)
+      ansible.builtin.dnf:
+        name: dnf5-plugin-automatic
+        state: present
+      when: install_dnf_automatic | bool
+      tags: [updates]
+
+    - name: Install ClamAV packages
+      ansible.builtin.dnf:
+        name:
+          - clamav
+          - clamav-freshclam
+        state: present
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+    - name: Enable ClamAV signature updates
+      ansible.builtin.systemd_service:
+        name: clamav-freshclam.service
+        enabled: true
+        state: started
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+    - name: Create scanner configuration directory
+      ansible.builtin.file:
+        path: /etc/clamav
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+    - name: Write list of expected CIFS mounts
+      ansible.builtin.template:
+        src: templates/cifs-shares.conf.j2
+        dest: /etc/clamav/cifs-shares.conf
+        owner: root
+        group: root
+        mode: '0600'
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+    - name: Install scan script
+      ansible.builtin.copy:
+        src: files/clamav-cifs-scan.sh
+        dest: /usr/local/sbin/clamav-cifs-scan.sh
+        owner: root
+        group: root
+        mode: '0755'
+        validate: 'bash -n %s'
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+    - name: Install hardened scan service
+      ansible.builtin.template:
+        src: templates/clamav-cifs-scan.service.j2
+        dest: /etc/systemd/system/clamav-cifs-scan.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload systemd
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+    - name: Install nightly scan timer
+      ansible.builtin.template:
+        src: templates/clamav-cifs-scan.timer.j2
+        dest: /etc/systemd/system/clamav-cifs-scan.timer
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload systemd
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+    - name: Apply service/timer unit changes before enabling
+      ansible.builtin.meta: flush_handlers
+      tags: [clamav]
+
+    - name: Enable nightly ClamAV timer
+      ansible.builtin.systemd_service:
+        name: clamav-cifs-scan.timer
+        enabled: true
+        state: started
+      when: clamav_enabled | bool
+      tags: [clamav]
+
+    - name: Check expected mounts are currently CIFS mountpoints
+      ansible.builtin.command:
+        argv: [findmnt, -rn, --mountpoint, '{{ item }}', --types, cifs]
+      loop: '{{ clamav_cifs_shares }}'
+      register: cifs_mount_checks
+      changed_when: false
+      failed_when: false
+      when: clamav_enabled | bool
+      tags: [validation]
+
+    - name: Report missing CIFS mounts without disrupting provisioning
+      ansible.builtin.debug:
+        msg: 'WARNING: {{ item.item }} is not presently a CIFS mount. Nightly scan will fail closed until available.'
+      loop: '{{ cifs_mount_checks.results | default([]) }}'
+      when:
+        - clamav_enabled | bool
+        - item.rc != 0
+      tags: [validation]
+
+    - name: Optionally start first full scan (may take hours)
+      ansible.builtin.systemd_service:
+        name: clamav-cifs-scan.service
+        state: started
+        no_block: true
+      when:
+        - clamav_enabled | bool
+        - run_initial_scan | bool
+      tags: [clamav, scan]
+
+    - name: Deploy SSH hardening drop-in (opt-in, requires verified key auth)
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/01-ansible-hardening.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
+        content: |
+          PermitRootLogin no
+          PubkeyAuthentication yes
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+      notify: Validate and reload sshd
+      when: ssh_hardening_enabled | bool
+      tags: [ssh]

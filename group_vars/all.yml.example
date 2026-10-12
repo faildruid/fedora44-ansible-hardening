@@ -1,0 +1,26 @@
+---
+# Customize per-host with host_vars/<inventory_name>.yml as necessary.
+clamav_enabled: true
+clamav_scan_time: '02:00:00'   # server-local timezone
+clamav_cifs_shares:
+  - /mnt/mytv
+  - /mnt/mymovies
+  - /mnt/mymusic
+  - /mnt/mypictures
+  - /mnt/mybooks
+
+# Read-only scanner. No delete/move/quarantine.
+clamav_scan_nice: 10
+clamav_scan_io_priority: 7
+
+# Baseline controls. Potentially disruptive actions are opt-in.
+firewalld_enabled: true
+selinux_enforcing: false     # set true only after verifying your policies
+ssh_hardening_enabled: false # first verify key auth + alternate management access
+
+# Optional operations, deliberately disabled by default.
+package_upgrade_enabled: false
+install_dnf_automatic: false  # package only; no unattended upgrade timer
+run_initial_scan: false       # can take hours and create heavy SMB I/O
+
+# Never manage CIFS mount credentials/fstab or alter firewall zones by default.
