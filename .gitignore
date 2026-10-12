@@ -1,6 +1,9 @@
 ### Project Specific
 all.yaml
 all.yml
+.vault_pass
+group_vars/secrets.yml
+inventory/hosts.ini
 
 ### Ansible ###
 *.retry
@@ -21,6 +24,9 @@ roles/**
 *pass*
 *password*
 *.txt
+!inventory/hosts.ini.example
+!.vault_pass.example
+!group_vars/secrets.yml.example
 
 # Exclude all binaries
 *.bin

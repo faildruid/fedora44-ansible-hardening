@@ -23,4 +23,7 @@ package_upgrade_enabled: false
 install_dnf_automatic: false  # package only; no unattended upgrade timer
 run_initial_scan: false       # can take hours and create heavy SMB I/O
 
+# Stored in an encrypted secrets file so ansible-playbook site.yml can run non-interactively.
+ansible_become_pass: "{{ vault_ansible_become_pass }}"
+
 # Never manage CIFS mount credentials/fstab or alter firewall zones by default.

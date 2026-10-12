@@ -1,0 +1,7 @@
+# Copy this file to .vault_pass and set it to your Ansible Vault password.
+# Then run:
+#   chmod 600 .vault_pass
+#   ansible-vault encrypt group_vars/secrets.yml
+#
+# Example:
+# my-secret-vault-password

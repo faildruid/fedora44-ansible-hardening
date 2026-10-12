@@ -6,6 +6,49 @@
 2. Edit `group_vars/all.yml` for site defaults; use `host_vars/<host>.yml` for host-specific scan shares and overrides.
 3. Confirm you have sudo access and an existing working SSH management path.
 
+## Secrets and local setup
+
+This project uses Ansible Vault for the sudo password so the real secret is not stored in Git.
+
+1. Install Ansible:
+
+```bash
+sudo dnf install ansible-core
+```
+
+2. Create the local inventory, vault password, and encrypted secret file from the examples:
+
+```bash
+cp inventory/hosts.ini.example inventory/hosts.ini
+cp .vault_pass.example .vault_pass
+chmod 600 .vault_pass
+cp group_vars/secrets.yml.example group_vars/secrets.yml
+```
+
+3. Edit the local files and replace the example values with your real data:
+
+- `inventory/hosts.ini` should list the real Fedora 44 hosts or localhost configuration.
+- `.vault_pass` should contain the vault password for unlocking the encrypted secret file.
+- `group_vars/secrets.yml` should contain the actual sudo password:
+
+```yaml
+vault_ansible_become_pass: "YourSudoPasswordHere"
+```
+
+4. Encrypt the secret file before you share or commit any work:
+
+```bash
+ansible-vault encrypt group_vars/secrets.yml
+```
+
+5. Keep the following local-only files out of Git; the project already ignores them in `.gitignore`:
+
+- `inventory/hosts.ini`
+- `.vault_pass`
+- `group_vars/secrets.yml`
+
+> Do not put the real sudo password in `group_vars/all.yml` or any tracked file. The playbook references `ansible_become_pass: "{{ vault_ansible_become_pass }}"`, and the value is supplied from the encrypted vault file.
+
 ## Run
 
 ```bash
