@@ -1,0 +1,4 @@
+---
+# Copy this file to host_vars/localhost.yml and replace the example password.
+vault_ansible_become_pass: "replace-with-your-sudo-password"
+ansible_become_pass: "{{ vault_ansible_become_pass }}"

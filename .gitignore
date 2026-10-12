@@ -2,7 +2,7 @@
 all.yaml
 all.yml
 .vault_pass
-group_vars/secrets.yml
+host_vars/localhost.yml
 inventory/hosts.ini
 
 ### Ansible ###
@@ -25,8 +25,11 @@ roles/**
 *password*
 *.txt
 !inventory/hosts.ini.example
+!host_vars/localhost.yml.example
 !.vault_pass.example
 !group_vars/secrets.yml.example
+host_vars/*.yml
+!host_vars/*.example
 
 # Exclude all binaries
 *.bin
